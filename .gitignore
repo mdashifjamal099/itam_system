@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.next-test/
+.env.local
+.env.local.*
+.env.test
+.env*.local
+.dev-actors.json
+*.tsbuildinfo
+next-env.d.ts

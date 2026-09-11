@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neondb_owner
+          POSTGRES_PASSWORD: ci_owner_password
+          POSTGRES_DB: itam_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neondb_owner -d itam_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Everything here is ephemeral, scoped to this one CI run's throwaway
+      # Postgres container — none of it is a real secret.
+      DATABASE_URL_UNPOOLED: postgresql://neondb_owner:ci_owner_password@localhost:5432/itam_ci?sslmode=disable
+      DATABASE_URL: postgresql://itam_app_test:ci_app_password@localhost:5432/itam_ci?sslmode=disable
+      APP_DB_ROLE: itam_app_test
+      APP_DB_PASSWORD: ci_app_password
+      OTP_PEPPER: ci-otp-pepper
+      CRON_SECRET: ci-cron-secret
+      HRIS_WEBHOOK_SECRET: ci-hris-secret
+      NEXTAUTH_SECRET: ci-nextauth-secret-not-for-production
+      NEXTAUTH_URL: http://localhost:3100
+      AUTH_URL: http://localhost:3100
+      AUTH_TRUST_HOST: "true"
+      TEST_PORT: "3100"
+      APP_URL: http://localhost:3100
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Write .env.test for the suite's own global-setup
+        run: |
+          cat > .env.test <<EOF
+          DATABASE_URL=${DATABASE_URL}
+          DATABASE_URL_UNPOOLED=${DATABASE_URL_UNPOOLED}
+          APP_DB_ROLE=${APP_DB_ROLE}
+          APP_DB_PASSWORD=${APP_DB_PASSWORD}
+          OTP_PEPPER=${OTP_PEPPER}
+          CRON_SECRET=${CRON_SECRET}
+          HRIS_WEBHOOK_SECRET=${HRIS_WEBHOOK_SECRET}
+          NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+          NEXTAUTH_URL=${NEXTAUTH_URL}
+          AUTH_URL=${AUTH_URL}
+          AUTH_TRUST_HOST=${AUTH_TRUST_HOST}
+          TEST_PORT=${TEST_PORT}
+          APP_URL=${APP_URL}
+          EOF
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Migration idempotency check (fresh apply, then a clean re-apply)
+        run: |
+          node --env-file=.env.test scripts/migrate.mjs --reset
+          node --env-file=.env.test scripts/migrate.mjs
+
+      - name: Test suite (spawns its own server + resets its own DB)
+        run: npm test
+
+      - name: Production build
+        env:
+          # .env.local is what `next build` reads; point it at the same
+          # throwaway CI database so any accidentally-static route still has
+          # something to connect to.
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ env.DATABASE_URL_UNPOOLED }}
+        run: npm run build
