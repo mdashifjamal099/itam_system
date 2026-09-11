@@ -9,6 +9,25 @@ type ImportResult = {
   failed: { row: number; assetTag: string | null; error: string }[];
 };
 
+const TEMPLATE_ROWS = [
+  ["Asset Tag", "Serial Number", "Category", "Model", "Vendor", "Procurement Date", "Warranty Expiry", "Location"],
+  ["ACME-LT-101", "C02XK9HTJGH1", "LAPTOP", "MacBook Pro 14\"", "Apple", "2026-01-15", "2029-01-15", "Bengaluru HQ"],
+  ["ACME-MB-201", "F2LXK9HTJGH2", "MOBILE", "iPhone 15", "Apple", "2026-02-01", "2028-02-01", "Bengaluru HQ"],
+];
+
+function downloadTemplate() {
+  const csv = TEMPLATE_ROWS.map((row) =>
+    row.map((cell) => (cell.includes(",") ? `"${cell}"` : cell)).join(","),
+  ).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "asset-import-template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function BulkImportForm() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +122,14 @@ export function BulkImportForm() {
             number, category, model, vendor, procurement date, warranty expiry, location. Column names
             are matched case-insensitively (e.g. &quot;Supplier&quot; also works for vendor).
           </p>
+          <button
+            type="button"
+            className="btn"
+            style={{ marginBottom: 12 }}
+            onClick={downloadTemplate}
+          >
+            Download CSV template
+          </button>
           <div className="field">
             <input
               ref={inputRef}
